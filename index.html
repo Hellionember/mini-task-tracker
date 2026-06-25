@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mini Task Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<!-- Подключаем Alpine.js для реактивности -->
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0e0e10; --surface: #16161a; --surface-2: #1e1e24;
+    --border: #2a2a32; --border-bright: #3a3a46;
+    --text: #e8e8f0; --text-muted: #8888a0; --text-dim: #55556a;
+    --accent: #7c6af7; --amber: #fbbf24; --red: #f87171;
+    --mono: 'JetBrains Mono', monospace; --sans: 'Inter', sans-serif;
+  }
+  html { background: var(--bg); color: var(--text); font-family: var(--sans); }
+  body { min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+  
+  .topbar {
+    width: 100%; border-bottom: 1px solid var(--border); padding: 0 2rem; height: 50px;
+    display: flex; align-items: center; gap: 1.5rem; background: var(--surface); position: sticky; top: 0; z-index: 10;
+  }
+  .counters { display: flex; gap: 1.5rem; font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+  .counters span.active-c { color: var(--accent); }
+  .counters span.overdue-c { color: var(--red); }
+  .counters span.done-c { color: var(--text-dim); }
+
+  .page { width: 100%; max-width: 800px; padding: 3rem 2rem; }
+  
+  /* Form & Filters */
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+  .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+  input, select, textarea {
+    background: var(--surface-2); border: 1px solid var(--border-bright); color: var(--text);
+    padding: 0.75rem; border-radius: 4px; font-family: var(--sans); font-size: 14px; width: 100%; outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  button {
+    background: var(--accent); color: #fff; border: none; padding: 0.75rem 1.5rem; border-radius: 4px;
+    font-family: var(--mono); font-size: 13px; cursor: pointer; transition: 0.2s;
+  }
+  button:hover { opacity: 0.9; }
+  button.btn-outline { background: transparent; border: 1px solid var(--border-bright); color: var(--text); }
+  button.btn-danger { background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.3); color: var(--red); }
+  
+  .error-msg { color: var(--red); font-size: 12px; font-family: var(--mono); margin-top: 0.5rem; }
+
+  .filters { display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; }
+  .filters input { flex: 1; min-width: 200px; }
+
+  /* Task List */
+  .task-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .task {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center;
+    background: var(--surface); border: 1px solid var(--border); padding: 1rem; border-radius: 8px; transition: 0.2s;
+  }
+  .task:hover { border-color: var(--border-bright); }
+  
+  .task.overdue { border-color: rgba(248, 113, 113, 0.4); background: rgba(248, 113, 113, 0.05); }
+  .task.done { opacity: 0.5; }
+  .task.done .task-title { text-decoration: line-through; }
+  
+  .task-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); }
+  .task-content { display: flex; flex-direction: column; gap: 4px; }
+  .task-title { font-size: 15px; color: var(--text); }
+  .task-meta { font-family: var(--mono); font-size: 11px; color: var(--text-muted); display: flex; gap: 10px; }
+  
+  .badge { padding: 2px 6px; border-radius: 3px; font-size: 10px; border: 1px solid var(--border-bright); }
+  .badge.High { color: var(--amber); border-color: var(--amber); }
+  .badge.overdue { color: var(--red); border-color: var(--red); }
+
+  /* Deleting State */
+  .deleting-overlay {
+    display: flex; justify-content: space-between; align-items: center; width: 100%;
+    color: var(--amber); font-family: var(--mono); font-size: 13px;
+  }
+</style>
+</head>
+<body x-data="app()">
+
+<!-- Шапка со счетчиками -->
+<div class="topbar">
+  <div style="font-family: var(--mono); font-size: 12px; color: var(--text-dim);">TRACKER</div>
+  <div style="flex: 1;"></div>
+  <div class="counters">
+    <span class="active-c" x-text="`${counters.active} Активных`"></span>
+    <span class="overdue-c" x-text="`${counters.overdue} Просроченных`"></span>
+    <span class="done-c" x-text="`${counters.done} Выполненных`"></span>
+  </div>
+</div>
+
+<div class="page">
+  <!-- Форма добавления -->
+  <div class="panel">
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Название задачи</label>
+        <input type="text" x-model="newTask.title" placeholder="Что нужно сделать?" @keydown.enter="createTask">
+        <div class="error-msg" x-show="error" x-text="error"></div>
+      </div>
+      <div class="form-group">
+        <label>Дедлайн</label>
+        <input type="date" x-model="newTask.deadline">
+      </div>
+      <div class="form-group">
+        <label>Приоритет</label>
+        <select x-model="newTask.priority">
+          <option value="Low">Низкий</option>
+          <option value="Medium">Средний</option>
+          <option value="High">Высокий</option>
+        </select>
+      </div>
+    </div>
+    <button @click="createTask">Добавить задачу</button>
+  </div>
+
+  <!-- Фильтры и Поиск (Бонусная фича) -->
+  <div class="filters">
+    <input type="text" x-model="searchQuery" placeholder="Поиск по названию (real-time)...">
+    <select x-model="filterStatus" style="width: auto;">
+      <option value="all">Все статусы</option>
+      <option value="active">Активные</option>
+      <option value="overdue">Просроченные</option>
+      <option value="done">Выполненные</option>
+    </select>
+    <select x-model="filterPriority" style="width: auto;">
+      <option value="all">Все приоритеты</option>
+      <option value="High">Высокий</option>
+      <option value="Medium">Средний</option>
+      <option value="Low">Низкий</option>
+    </select>
+  </div>
+
+  <!-- Список задач -->
+  <div class="task-list">
+    <template x-for="task in filteredTasks" :key="task.id">
+      <div class="task" :class="{ 'overdue': task.dynamic_status === 'overdue', 'done': task.dynamic_status === 'done' }">
+        
+        <!-- Состояние: Удаляется (5 сек) -->
+        <template x-if="task.is_deleting">
+          <div class="deleting-overlay full">
+            <span x-text="`Удаление через ${task.timeLeft} сек...`"></span>
+            <button class="btn-outline" style="padding: 4px 10px;" @click="undoDelete(task)">Отменить</button>
+          </div>
+        </template>
+
+        <!-- Состояние: Обычное -->
+        <template x-if="!task.is_deleting">
+          <>
+            <input type="checkbox" class="task-checkbox" 
+                   :checked="task.dynamic_status === 'done'" 
+                   @change="toggleStatus(task)">
+            
+            <div class="task-content">
+              <div class="task-title" x-text="task.title"></div>
+              <div class="task-meta">
+                <span x-text="`До: ${task.deadline}`"></span>
+                <span class="badge" :class="task.priority" x-text="task.priority"></span>
+                <template x-if="task.dynamic_status === 'overdue'">
+                  <span class="badge overdue">Просрочено</span>
+                </template>
+              </div>
+            </div>
+
+            <button class="btn-danger" style="padding: 4px 10px;" @click="startDelete(task)">Удалить</button>
+          </>
+        </template>
+        
+      </div>
+    </template>
+    
+    <div x-show="filteredTasks.length === 0" style="text-align: center; color: var(--text-muted); font-size: 14px; margin-top: 2rem;">
+      Задач не найдено
+    </div>
+  </div>
+</div>
+
+<script>
+function app() {
+  return {
+    tasks: [],
+    searchQuery: '',
+    filterStatus: 'all',
+    filterPriority: 'all',
+    error: '',
+    newTask: {
+      title: '',
+      deadline: new Date().toISOString().split('T')[0],
+      priority: 'Medium'
+    },
+
+    async init() {
+      await this.fetchTasks();
+    },
+
+    async fetchTasks() {
+      const res = await fetch('/api/tasks');
+      const data = await res.json();
+      // Мержим локальное состояние `is_deleting`, чтобы не перетирать его при автообновлении
+      this.tasks = data.map(t => {
+        const existing = this.tasks.find(x => x.id === t.id);
+        return existing ? { ...t, is_deleting: existing.is_deleting, timeLeft: existing.timeLeft } : { ...t, is_deleting: false };
+      });
+    },
+
+    get filteredTasks() {
+      return this.tasks.filter(t => {
+        if (t.is_deleting) return true; // Оставляем удаляемые, чтобы видеть таймер
+        
+        const matchSearch = t.title.toLowerCase().includes(this.searchQuery.toLowerCase());
+        const matchStatus = this.filterStatus === 'all' || t.dynamic_status === this.filterStatus;
+        const matchPriority = this.filterPriority === 'all' || t.priority === this.filterPriority;
+        
+        return matchSearch && matchStatus && matchPriority;
+      });
+    },
+
+    get counters() {
+      // Игнорируем задачи в процессе удаления
+      const visible = this.tasks.filter(t => !t.is_deleting);
+      return {
+        active: visible.filter(t => t.dynamic_status === 'active').length,
+        overdue: visible.filter(t => t.dynamic_status === 'overdue').length,
+        done: visible.filter(t => t.dynamic_status === 'done').length
+      };
+    },
+
+    async createTask() {
+      this.error = '';
+      if (!this.newTask.title.trim()) {
+        this.error = 'Название не может состоять только из пробелов';
+        return;
+      }
+
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(this.newTask)
+      });
+
+      if (res.ok) {
+        this.newTask.title = '';
+        await this.fetchTasks();
+      }
+    },
+
+    async toggleStatus(task) {
+      // Оптимистичное обновление UI мгновенно
+      const newStatus = task.dynamic_status === 'done' ? 'active' : 'done';
+      task.dynamic_status = newStatus; 
+      task.status = newStatus; // обновляем базовый статус тоже
+      
+      await fetch(`/api/tasks/${task.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      await this.fetchTasks(); // Перезапрашиваем для применения умной сортировки сервера
+    },
+
+    startDelete(task) {
+      task.is_deleting = true;
+      task.timeLeft = 5;
+      
+      task.timerInt = setInterval(() => {
+        task.timeLeft--;
+      }, 1000);
+
+      task.timerOut = setTimeout(async () => {
+        clearInterval(task.timerInt);
+        await fetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
+        this.tasks = this.tasks.filter(t => t.id !== task.id);
+      }, 5000);
+    },
+
+    undoDelete(task) {
+      clearInterval(task.timerInt);
+      clearTimeout(task.timerOut);
+      task.is_deleting = false;
+    }
+  }
+}
+</script>
+</body>
+</html>
