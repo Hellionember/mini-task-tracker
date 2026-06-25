@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
-<!-- Подключаем Alpine.js для реактивности -->
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,14 +31,12 @@
 
   .page { width: 100%; max-width: 800px; padding: 3rem 2rem; }
   
-  /* Form & Filters */
   .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; }
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
   .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
   .form-group.full { grid-column: 1 / -1; }
   label { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
   
-  /* ИСПРАВЛЕНИЕ: resize: vertical запрещает растягивать по горизонтали */
   input, select, textarea {
     background: var(--surface-2); border: 1px solid var(--border-bright); color: var(--text);
     padding: 0.75rem; border-radius: 4px; font-family: var(--sans); font-size: 14px; width: 100%; outline: none;
@@ -60,14 +57,12 @@
   .filters { display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; }
   .filters input { flex: 1; min-width: 200px; }
 
-  /* Task List */
   .task-list { display: flex; flex-direction: column; gap: 0.5rem; }
   .task {
     display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center;
     background: var(--surface); border: 1px solid var(--border); padding: 1rem; border-radius: 8px; transition: 0.2s;
   }
   .task:hover { border-color: var(--border-bright); }
-  
   .task.overdue { border-color: rgba(248, 113, 113, 0.4); background: rgba(248, 113, 113, 0.05); }
   .task.done { opacity: 0.5; }
   .task.done .task-title { text-decoration: line-through; }
@@ -104,11 +99,11 @@
     <div class="form-grid">
       <div class="form-group full">
         <label>Название задачи</label>
+        <!-- Добавлено type="button" чтобы не было проблем с формами -->
         <input type="text" x-model="newTask.title" placeholder="Что нужно сделать?" @keydown.enter="createTask">
         <div class="error-msg" x-show="error" x-text="error"></div>
       </div>
       
-      <!-- ДОБАВЛЕНО ОПИСАНИЕ -->
       <div class="form-group full">
         <label>Описание (необязательно)</label>
         <textarea x-model="newTask.description" placeholder="Детали задачи..." rows="2"></textarea>
@@ -127,7 +122,8 @@
         </select>
       </div>
     </div>
-    <button @click="createTask">Добавить задачу</button>
+    <!-- Добавлено type="button" -->
+    <button type="button" @click="createTask()">Добавить задачу</button>
   </div>
 
   <div class="filters">
@@ -157,7 +153,6 @@
           </div>
         </template>
 
-        <!-- ИСПРАВЛЕНИЕ: Заменил невалидные <> на div со стилем display: contents (чтобы сетка грида не ломалась) -->
         <template x-if="!task.is_deleting">
           <div style="display: contents;">
             <input type="checkbox" class="task-checkbox" 
@@ -166,7 +161,6 @@
             
             <div class="task-content">
               <div class="task-title" x-text="task.title"></div>
-              <!-- ВЫВОД ОПИСАНИЯ -->
               <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 4px;" x-show="task.description" x-text="task.description"></div>
               
               <div class="task-meta">
@@ -201,7 +195,7 @@ function app() {
     error: '',
     newTask: {
       title: '',
-      description: '', // Добавлено
+      description: '', 
       deadline: new Date().toISOString().split('T')[0],
       priority: 'Medium'
     },
@@ -239,22 +233,32 @@ function app() {
     },
 
     async createTask() {
-      this.error = '';
+      this.error = ''; // Очищаем ошибку
       if (!this.newTask.title.trim()) {
         this.error = 'Название не может состоять только из пробелов';
         return;
       }
 
-      const res = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(this.newTask)
-      });
+      try {
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.newTask)
+        });
 
-      if (res.ok) {
-        this.newTask.title = '';
-        this.newTask.description = ''; // Очистка
-        await this.fetchTasks();
+        if (res.ok) {
+          this.newTask.title = '';
+          this.newTask.description = ''; 
+          await this.fetchTasks();
+        } else {
+          // Если бекенд ругается (например, ошибка валидации)
+          const errorData = await res.json();
+          console.error("Backend Error:", errorData);
+          this.error = 'Ошибка от сервера. Проверьте F12 -> Console.';
+        }
+      } catch (e) {
+        console.error("Network Error:", e);
+        this.error = 'Проблема с сетью или сервер не запущен.';
       }
     },
 
