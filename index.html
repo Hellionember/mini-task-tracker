@@ -59,7 +59,7 @@
 
   .task-list { display: flex; flex-direction: column; gap: 0.5rem; }
   .task {
-    display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center;
+    display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: start;
     background: var(--surface); border: 1px solid var(--border); padding: 1rem; border-radius: 8px; transition: 0.2s;
   }
   .task:hover { border-color: var(--border-bright); }
@@ -67,7 +67,7 @@
   .task.done { opacity: 0.5; }
   .task.done .task-title { text-decoration: line-through; }
   
-  .task-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); }
+  .task-checkbox { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); margin-top: 4px; }
   .task-content { display: flex; flex-direction: column; gap: 4px; }
   .task-title { font-size: 15px; color: var(--text); }
   .task-meta { font-family: var(--mono); font-size: 11px; color: var(--text-muted); display: flex; gap: 10px; }
@@ -75,6 +75,8 @@
   .badge { padding: 2px 6px; border-radius: 3px; font-size: 10px; border: 1px solid var(--border-bright); }
   .badge.High { color: var(--amber); border-color: var(--amber); }
   .badge.overdue { color: var(--red); border-color: var(--red); }
+
+  .task-actions { display: flex; flex-direction: column; gap: 8px; }
 
   .deleting-overlay {
     display: flex; justify-content: space-between; align-items: center; width: 100%;
@@ -99,7 +101,6 @@
     <div class="form-grid">
       <div class="form-group full">
         <label>Название задачи</label>
-        <!-- Добавлено type="button" чтобы не было проблем с формами -->
         <input type="text" x-model="newTask.title" placeholder="Что нужно сделать?" @keydown.enter="createTask">
         <div class="error-msg" x-show="error" x-text="error"></div>
       </div>
@@ -122,7 +123,6 @@
         </select>
       </div>
     </div>
-    <!-- Добавлено type="button" -->
     <button type="button" @click="createTask()">Добавить задачу</button>
   </div>
 
@@ -144,7 +144,7 @@
 
   <div class="task-list">
     <template x-for="task in filteredTasks" :key="task.id">
-      <div class="task" :class="{ 'overdue': task.dynamic_status === 'overdue', 'done': task.dynamic_status === 'done' }">
+      <div class="task" :class="{ 'overdue': task.dynamic_status === 'overdue' && !task.is_editing, 'done': task.dynamic_status === 'done' && !task.is_editing }">
         
         <template x-if="task.is_deleting">
           <div class="deleting-overlay">
@@ -155,14 +155,15 @@
 
         <template x-if="!task.is_deleting">
           <div style="display: contents;">
-            <input type="checkbox" class="task-checkbox" 
-                   :checked="task.dynamic_status === 'done'" 
-                   @change="toggleStatus(task)">
+            <!-- Чекбокс прячем при редактировании -->
+            <div style="width: 18px;">
+              <input type="checkbox" class="task-checkbox" x-show="!task.is_editing" :checked="task.dynamic_status === 'done'" @change="toggleStatus(task)">
+            </div>
             
-            <div class="task-content">
+            <!-- РЕЖИМ ПРОСМОТРА -->
+            <div class="task-content" x-show="!task.is_editing">
               <div class="task-title" x-text="task.title"></div>
               <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 4px;" x-show="task.description" x-text="task.description"></div>
-              
               <div class="task-meta">
                 <span x-text="`До: ${task.deadline}`"></span>
                 <span class="badge" :class="task.priority" x-text="task.priority"></span>
@@ -172,7 +173,36 @@
               </div>
             </div>
 
-            <button class="btn-danger" style="padding: 4px 10px;" @click="startDelete(task)">Удалить</button>
+            <!-- РЕЖИМ РЕДАКТИРОВАНИЯ -->
+            <div class="task-content" x-show="task.is_editing" style="gap: 8px;">
+              <input type="text" x-model="task.edit_title" style="padding: 6px;" placeholder="Название">
+              <textarea x-model="task.edit_description" style="padding: 6px;" rows="1" placeholder="Описание"></textarea>
+              <div style="display: flex; gap: 8px;">
+                <input type="date" x-model="task.edit_deadline" style="padding: 6px;">
+                <select x-model="task.edit_priority" style="padding: 6px;">
+                  <option value="Low">Низкий</option>
+                  <option value="Medium">Средний</option>
+                  <option value="High">Высокий</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- КНОПКИ ДЕЙСТВИЙ -->
+            <div class="task-actions">
+              <template x-if="!task.is_editing">
+                <div style="display: contents;">
+                  <button class="btn-outline" style="padding: 4px 10px;" @click="startEdit(task)">Ред.</button>
+                  <button class="btn-danger" style="padding: 4px 10px;" @click="startDelete(task)">Удал.</button>
+                </div>
+              </template>
+              <template x-if="task.is_editing">
+                <div style="display: contents;">
+                  <button style="padding: 4px 10px;" @click="saveEdit(task)">Сохр.</button>
+                  <button class="btn-outline" style="padding: 4px 10px;" @click="task.is_editing = false">Отмена</button>
+                </div>
+              </template>
+            </div>
+
           </div>
         </template>
         
@@ -209,7 +239,8 @@ function app() {
       const data = await res.json();
       this.tasks = data.map(t => {
         const existing = this.tasks.find(x => x.id === t.id);
-        return existing ? { ...t, is_deleting: existing.is_deleting, timeLeft: existing.timeLeft } : { ...t, is_deleting: false };
+        // Добавили флаг is_editing: false
+        return existing ? { ...t, is_deleting: existing.is_deleting, timeLeft: existing.timeLeft, is_editing: existing.is_editing || false } : { ...t, is_deleting: false, is_editing: false };
       });
     },
 
@@ -233,31 +264,23 @@ function app() {
     },
 
     async createTask() {
-      this.error = ''; // Очищаем ошибку
+      this.error = ''; 
       if (!this.newTask.title.trim()) {
         this.error = 'Название не может состоять только из пробелов';
         return;
       }
-
       try {
         const res = await fetch('/api/tasks', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(this.newTask)
         });
-
         if (res.ok) {
           this.newTask.title = '';
           this.newTask.description = ''; 
           await this.fetchTasks();
-        } else {
-          // Если бекенд ругается (например, ошибка валидации)
-          const errorData = await res.json();
-          console.error("Backend Error:", errorData);
-          this.error = 'Ошибка от сервера. Проверьте F12 -> Console.';
         }
       } catch (e) {
-        console.error("Network Error:", e);
         this.error = 'Проблема с сетью или сервер не запущен.';
       }
     },
@@ -275,14 +298,41 @@ function app() {
       await this.fetchTasks();
     },
 
+    // ЛОГИКА РЕДАКТИРОВАНИЯ
+    startEdit(task) {
+      task.edit_title = task.title;
+      task.edit_description = task.description;
+      task.edit_deadline = task.deadline;
+      task.edit_priority = task.priority;
+      task.is_editing = true;
+    },
+
+    async saveEdit(task) {
+      if (!task.edit_title.trim()) return;
+      
+      const payload = {
+        title: task.edit_title,
+        description: task.edit_description,
+        deadline: task.edit_deadline,
+        priority: task.edit_priority
+      };
+
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        task.is_editing = false;
+        await this.fetchTasks();
+      }
+    },
+
     startDelete(task) {
       task.is_deleting = true;
       task.timeLeft = 5;
-      
-      task.timerInt = setInterval(() => {
-        task.timeLeft--;
-      }, 1000);
-
+      task.timerInt = setInterval(() => { task.timeLeft--; }, 1000);
       task.timerOut = setTimeout(async () => {
         clearInterval(task.timerInt);
         await fetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
