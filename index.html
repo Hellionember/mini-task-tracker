@@ -38,11 +38,15 @@
   .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
   .form-group.full { grid-column: 1 / -1; }
   label { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+  
+  /* ИСПРАВЛЕНИЕ: resize: vertical запрещает растягивать по горизонтали */
   input, select, textarea {
     background: var(--surface-2); border: 1px solid var(--border-bright); color: var(--text);
     padding: 0.75rem; border-radius: 4px; font-family: var(--sans); font-size: 14px; width: 100%; outline: none;
+    resize: vertical; 
   }
   input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  
   button {
     background: var(--accent); color: #fff; border: none; padding: 0.75rem 1.5rem; border-radius: 4px;
     font-family: var(--mono); font-size: 13px; cursor: pointer; transition: 0.2s;
@@ -77,16 +81,14 @@
   .badge.High { color: var(--amber); border-color: var(--amber); }
   .badge.overdue { color: var(--red); border-color: var(--red); }
 
-  /* Deleting State */
   .deleting-overlay {
     display: flex; justify-content: space-between; align-items: center; width: 100%;
-    color: var(--amber); font-family: var(--mono); font-size: 13px;
+    color: var(--amber); font-family: var(--mono); font-size: 13px; grid-column: 1 / -1;
   }
 </style>
 </head>
 <body x-data="app()">
 
-<!-- Шапка со счетчиками -->
 <div class="topbar">
   <div style="font-family: var(--mono); font-size: 12px; color: var(--text-dim);">TRACKER</div>
   <div style="flex: 1;"></div>
@@ -98,7 +100,6 @@
 </div>
 
 <div class="page">
-  <!-- Форма добавления -->
   <div class="panel">
     <div class="form-grid">
       <div class="form-group full">
@@ -106,10 +107,13 @@
         <input type="text" x-model="newTask.title" placeholder="Что нужно сделать?" @keydown.enter="createTask">
         <div class="error-msg" x-show="error" x-text="error"></div>
       </div>
+      
+      <!-- ДОБАВЛЕНО ОПИСАНИЕ -->
       <div class="form-group full">
         <label>Описание (необязательно)</label>
         <textarea x-model="newTask.description" placeholder="Детали задачи..." rows="2"></textarea>
       </div>
+
       <div class="form-group">
         <label>Дедлайн</label>
         <input type="date" x-model="newTask.deadline">
@@ -126,7 +130,6 @@
     <button @click="createTask">Добавить задачу</button>
   </div>
 
-  <!-- Фильтры и Поиск (Бонусная фича) -->
   <div class="filters">
     <input type="text" x-model="searchQuery" placeholder="Поиск по названию (real-time)...">
     <select x-model="filterStatus" style="width: auto;">
@@ -143,30 +146,29 @@
     </select>
   </div>
 
-  <!-- Список задач -->
   <div class="task-list">
     <template x-for="task in filteredTasks" :key="task.id">
       <div class="task" :class="{ 'overdue': task.dynamic_status === 'overdue', 'done': task.dynamic_status === 'done' }">
         
-        <!-- Состояние: Удаляется (5 сек) -->
         <template x-if="task.is_deleting">
-          <div class="deleting-overlay full">
+          <div class="deleting-overlay">
             <span x-text="`Удаление через ${task.timeLeft} сек...`"></span>
             <button class="btn-outline" style="padding: 4px 10px;" @click="undoDelete(task)">Отменить</button>
           </div>
         </template>
 
-        <!-- Состояние: Обычное -->
+        <!-- ИСПРАВЛЕНИЕ: Заменил невалидные <> на div со стилем display: contents (чтобы сетка грида не ломалась) -->
         <template x-if="!task.is_deleting">
-          <>
+          <div style="display: contents;">
             <input type="checkbox" class="task-checkbox" 
                    :checked="task.dynamic_status === 'done'" 
                    @change="toggleStatus(task)">
             
             <div class="task-content">
               <div class="task-title" x-text="task.title"></div>
-              <div class="task-title" x-text="task.title"></div>
+              <!-- ВЫВОД ОПИСАНИЯ -->
               <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 4px;" x-show="task.description" x-text="task.description"></div>
+              
               <div class="task-meta">
                 <span x-text="`До: ${task.deadline}`"></span>
                 <span class="badge" :class="task.priority" x-text="task.priority"></span>
@@ -177,7 +179,7 @@
             </div>
 
             <button class="btn-danger" style="padding: 4px 10px;" @click="startDelete(task)">Удалить</button>
-          </>
+          </div>
         </template>
         
       </div>
@@ -199,7 +201,7 @@ function app() {
     error: '',
     newTask: {
       title: '',
-       description: '',
+      description: '', // Добавлено
       deadline: new Date().toISOString().split('T')[0],
       priority: 'Medium'
     },
@@ -211,7 +213,6 @@ function app() {
     async fetchTasks() {
       const res = await fetch('/api/tasks');
       const data = await res.json();
-      // Мержим локальное состояние `is_deleting`, чтобы не перетирать его при автообновлении
       this.tasks = data.map(t => {
         const existing = this.tasks.find(x => x.id === t.id);
         return existing ? { ...t, is_deleting: existing.is_deleting, timeLeft: existing.timeLeft } : { ...t, is_deleting: false };
@@ -220,18 +221,15 @@ function app() {
 
     get filteredTasks() {
       return this.tasks.filter(t => {
-        if (t.is_deleting) return true; // Оставляем удаляемые, чтобы видеть таймер
-        
+        if (t.is_deleting) return true;
         const matchSearch = t.title.toLowerCase().includes(this.searchQuery.toLowerCase());
         const matchStatus = this.filterStatus === 'all' || t.dynamic_status === this.filterStatus;
         const matchPriority = this.filterPriority === 'all' || t.priority === this.filterPriority;
-        
         return matchSearch && matchStatus && matchPriority;
       });
     },
 
     get counters() {
-      // Игнорируем задачи в процессе удаления
       const visible = this.tasks.filter(t => !t.is_deleting);
       return {
         active: visible.filter(t => t.dynamic_status === 'active').length,
@@ -255,23 +253,22 @@ function app() {
 
       if (res.ok) {
         this.newTask.title = '';
-        this.newTask.description = '';
+        this.newTask.description = ''; // Очистка
         await this.fetchTasks();
       }
     },
 
     async toggleStatus(task) {
-      // Оптимистичное обновление UI мгновенно
       const newStatus = task.dynamic_status === 'done' ? 'active' : 'done';
       task.dynamic_status = newStatus; 
-      task.status = newStatus; // обновляем базовый статус тоже
+      task.status = newStatus;
       
       await fetch(`/api/tasks/${task.id}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });
-      await this.fetchTasks(); // Перезапрашиваем для применения умной сортировки сервера
+      await this.fetchTasks();
     },
 
     startDelete(task) {
